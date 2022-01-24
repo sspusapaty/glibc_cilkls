@@ -22,7 +22,7 @@
 int
 __tss_set (tss_t tss_id, void *val)
 {
-  int err_code = __pthread_setspecific (tss_id, val);
+  int err_code = __cilk_worker_setspecific (tss_id, val);
   return thrd_err_map (err_code);
 }
 #if PTHREAD_IN_LIBC

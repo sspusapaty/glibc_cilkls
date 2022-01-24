@@ -19,21 +19,35 @@
 #include "pthreadP.h"
 #include <shlib-compat.h>
 
+extern int (*is_cilk_thread)(void);
+extern pthread_mutex_t* (*get_cilkls_mutex)(void);
+extern pthread_t (*cilk_current)(void);
+
 void *
 ___cilk_worker_getspecific (pthread_key_t key)
 {
   struct pthread_key_data *data;
+  pthread_mutex_t* mutex = NULL;
+
+  if (!is_cilk_thread())
+      return __pthread_getspecific(key);
+
+  struct pthread* self = (struct pthread*)(cilk_current());
+  mutex = get_cilkls_mutex();
+  pthread_mutex_lock(mutex);
 
   /* Special case access to the first 2nd-level block.  This is the
      usual case.  */
   if (__glibc_likely (key < PTHREAD_KEY_2NDLEVEL_SIZE))
-    data = &THREAD_SELF->specific_1stblock[key];
+    data = &self->specific_1stblock[key];
   else
     {
       /* Verify the key is sane.  */
-      if (key >= PTHREAD_KEYS_MAX)
-	/* Not valid.  */
-	return NULL;
+        if (key >= PTHREAD_KEYS_MAX) {
+            pthread_mutex_unlock(mutex);
+            /* Not valid.  */
+            return NULL;
+        }
 
       unsigned int idx1st = key / PTHREAD_KEY_2NDLEVEL_SIZE;
       unsigned int idx2nd = key % PTHREAD_KEY_2NDLEVEL_SIZE;
@@ -41,11 +55,12 @@ ___cilk_worker_getspecific (pthread_key_t key)
       /* If the sequence number doesn't match or the key cannot be defined
 	 for this thread since the second level array is not allocated
 	 return NULL, too.  */
-      struct pthread_key_data *level2 = THREAD_GETMEM_NC (THREAD_SELF,
-							  specific, idx1st);
-      if (level2 == NULL)
-	/* Not allocated, therefore no data.  */
-	return NULL;
+      struct pthread_key_data *level2 = self->specific[idx1st];
+      if (level2 == NULL) {
+        pthread_mutex_unlock(mutex);
+        /* Not allocated, therefore no data.  */
+        return NULL;
+      }
 
       /* There is data.  */
       data = &level2[idx2nd];
@@ -60,6 +75,7 @@ ___cilk_worker_getspecific (pthread_key_t key)
 	result = data->data = NULL;
     }
 
+  pthread_mutex_unlock(mutex);
   return result;
 }
 versioned_symbol (libc, ___cilk_worker_getspecific, cilk_worker_getspecific,

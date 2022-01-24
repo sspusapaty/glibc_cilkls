@@ -22,7 +22,7 @@
 void *
 __tss_get (tss_t tss_id)
 {
-  return __pthread_getspecific (tss_id);
+  return __cilk_worker_getspecific (tss_id);
 }
 #if PTHREAD_IN_LIBC
 versioned_symbol (libc, __tss_get, tss_get, GLIBC_2_34);
